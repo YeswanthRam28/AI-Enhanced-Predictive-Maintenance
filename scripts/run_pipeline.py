@@ -21,40 +21,59 @@ def evaluate_predictions(predictions, rul_file):
     - Column mismatches
     - Subset of engines
     - Auto-renamed columns
+    - Engine ID type mismatches
     """
+    # Ensure predictions is a DataFrame
+    if not isinstance(predictions, pd.DataFrame):
+        raise TypeError(f"Expected predictions as DataFrame, got {type(predictions)}")
+
     # Load true RULs
     try:
         true_rul_df = pd.read_csv(rul_file, header=None, names=["RUL"])
     except Exception as e:
         raise RuntimeError(f"Failed to read RUL file: {rul_file}\n{e}")
 
+    # Assign Engine_IDs
     true_rul_df["Engine_ID"] = range(1, len(true_rul_df) + 1)
 
     # Detect engine and cycle columns
+    if len(predictions.columns) < 2:
+        raise ValueError(f"Predictions DataFrame has insufficient columns: {list(predictions.columns)}")
     engine_col, cycle_col = predictions.columns[0], predictions.columns[1]
-    predictions[engine_col] = predictions[engine_col].astype(int)
+
+    # Convert engine IDs to int to avoid merge issues
+    predictions[engine_col] = pd.to_numeric(predictions[engine_col], errors='coerce').astype(int)
+    true_rul_df["Engine_ID"] = pd.to_numeric(true_rul_df["Engine_ID"], errors='coerce').astype(int)
 
     # Keep only last cycle per engine
     if cycle_col in predictions.columns:
-        last_cycles = predictions.sort_values(by=[engine_col, cycle_col]) \
-                                 .groupby(engine_col, as_index=False).last()
+        last_cycles = (
+            predictions.sort_values(by=[engine_col, cycle_col])
+            .groupby(engine_col, as_index=False)
+            .last()
+        )
     else:
         last_cycles = predictions.groupby(engine_col, as_index=False).last()
 
     # Merge predictions with true RULs
     merged = pd.merge(
-        last_cycles, true_rul_df,
-        left_on=engine_col, right_on="Engine_ID",
-        how="inner"
+        last_cycles,
+        true_rul_df,
+        left_on=engine_col,
+        right_on="Engine_ID",
+        how="inner",
     )
 
-    # Safely detect RUL column
-    if 'RUL' not in merged.columns:
-        rul_candidates = [c for c in merged.columns if 'RUL' in c and c != 'Predicted_RUL']
+    # Detect RUL column
+    if "RUL" not in merged.columns:
+        rul_candidates = [c for c in merged.columns if "RUL" in c and c != "Predicted_RUL"]
         if rul_candidates:
-            merged.rename(columns={rul_candidates[0]: 'RUL'}, inplace=True)
+            merged.rename(columns={rul_candidates[0]: "RUL"}, inplace=True)
         else:
-            raise KeyError("No 'RUL' column found after merge. Check RUL file and predictions.")
+            raise KeyError("No 'RUL' column found after merge.")
+
+    if "Predicted_RUL" not in merged.columns:
+        raise KeyError("Predictions must contain 'Predicted_RUL' column.")
 
     pred_rul = merged["Predicted_RUL"].values
     true_rul = merged["RUL"].values

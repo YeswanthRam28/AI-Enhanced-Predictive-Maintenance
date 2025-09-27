@@ -8,7 +8,10 @@ from src.data_exploration import load_data
 
 
 def load_model(model_name=None):
-    """Load a trained model. Defaults to best_model.pkl if no model_name is provided."""
+    """
+    Load a trained model.
+    Defaults to best_model.pkl if no model_name is provided.
+    """
     model_path = os.path.join('models', f'{model_name}_model.pkl') if model_name else 'models/best_model.pkl'
     if not os.path.exists(model_path):
         raise FileNotFoundError(f"{os.path.basename(model_path)} not found. Train models first using run_pipeline.py.")
@@ -45,6 +48,8 @@ def predict(file_path, model_name=None, last_cycle_only=False):
         file_path (str): Path to test data
         model_name (str): Name of the trained model to use
         last_cycle_only (bool): If True, return predictions only for last cycle per engine
+    Returns:
+        pd.DataFrame: predictions with 'Predicted_RUL' column
     """
     # Load and preprocess data
     df = load_data(file_path)
@@ -56,12 +61,13 @@ def predict(file_path, model_name=None, last_cycle_only=False):
 
     # Detect engine and cycle columns
     engine_col, cycle_col = df.columns[0], df.columns[1]
-    df[engine_col] = df[engine_col].astype(int)
+
+    # Ensure engine_col is int
+    df[engine_col] = pd.to_numeric(df[engine_col], errors='coerce').astype(int)
 
     # Align features with training
     feature_columns = load_feature_columns()
     aligned_columns = [col for col in feature_columns if col in df.columns]
-
     if not aligned_columns:
         raise ValueError("None of the feature columns from training are present in the test set.")
 
@@ -94,6 +100,7 @@ if __name__ == "__main__":
         print(f"\n⚠️ Prediction failed: {e}")
         exit(1)
 
+    # Save predictions
     output_file = 'data/processed/predictions_FD001.csv'
     os.makedirs(os.path.dirname(output_file), exist_ok=True)
     predictions.to_csv(output_file, index=False)
